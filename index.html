@@ -318,39 +318,31 @@ function openTicket(kind,after){
   setTimeout(()=>{const st=row.querySelector('.st');st.textContent='IN REVIEW';},4000);
   setTimeout(()=>{const st=row.querySelector('.st');st.textContent='RESOLVED';st.classList.add('rv');log(id+' RESOLVED BY TEAM LEAD','ok');if(after)after()},11000);
 }
-let lastMoveTs=0,scanClear=0,phase='stable',phaseT=0,nextThreat=0,wasMoving=false,threatN=0,lastThreat='GENERAL';
-function raiseThreat(){
-  phase='threat';threatN++;
-  const sig='SCAN-'+Math.floor(rnd(100,999));
-  lastThreat='THREAT '+sig;
-  $('tinfo').textContent='⚠ '+sig+' · BEARING '+Math.floor(rnd(0,359))+'° · RANGE '+Math.floor(rnd(20,400))+' m · LOCKING ON';
-  log('THREAT DETECTED · '+sig+' · TRACKING LOCK ATTEMPT','bd');
-  try{navigator.vibrate&&navigator.vibrate([120,80,120])}catch(e){}
-}
+let lastMoveTs=0,scanClear=0,phase='stable',phaseT=0,nextSwitch=3000,lastThreat='GENERAL';
+
+/* Alternates STABLE <-> SCRAMBLING forever. No threats are ever raised. */
 function stateTick(ts){
   if(quiet)return;
-  if(phase==='resolving'){
-    if(ts>phaseT){phase='stable';nextThreat=ts+rnd(8000,15000);$('tinfo').textContent='';log('THREAT ELIMINATED · BACK TO STABLE','ok');}
-    return;
+  if(phase==='scrambling'){
+    if(ts>phaseT){
+      phase='stable';
+      nextSwitch=ts+rnd(4000,7000);
+      log('FIELD SETTLED · STABLE','ok');
+    }
+  }else if(phase==='stable'){
+    if(ts>nextSwitch){
+      phase='scrambling';
+      phaseT=ts+rnd(4000,6000);
+      log('SCRAMBLING · DISTORTION FIELD ENGAGED','mg');
+    }
+  }else{
+    // safety: any other phase falls back to stable
+    phase='stable';
+    nextSwitch=ts+rnd(3000,5000);
   }
-  if(phase==='threat')return;
-  const moving=motionI>.3;
-  if(moving)lastMoveTs=ts;
-  if(moving&&!wasMoving&&phase==='stable'){phase='scrambling';phaseT=ts+rnd(4000,6000);log('MOTION DETECTED · SCRAMBLING','mg')}
-  if(phase==='scrambling'&&ts>phaseT){phase='stable';nextThreat=ts+rnd(6000,12000);log('FIELD SETTLED · STABLE','ok')}
-  else if(phase==='stable'&&nextThreat>0&&ts>nextThreat){
-    if(ts-lastMoveTs<30000)raiseThreat(); else nextThreat=0;
-  }
-  wasMoving=moving;
 }
 $('bConf').onclick=()=>{
-  if(phase==='threat'){
-    phase='resolving';phaseT=performance.now()+3500;
-    log('RESOLVE CONFLICT · ENGAGING…','wr');
-    setTimeout(()=>log('INVERTING PHASE · SEVERING LOCK','mg'),1000);
-    setTimeout(()=>log('SCANNER DROPPED · TRACE WIPED','ok'),2200);
-  }else if(phase==='resolving')log('ALREADY RESOLVING…','wr');
-  else log('NO ACTIVE THREAT · NOTHING TO RESOLVE','ok');
+  log('NO ACTIVE THREAT · NOTHING TO RESOLVE','ok');
 };
 $('bTix').onclick=()=>openTicket(lastThreat);
 $('bScan').onclick=()=>{log('RESOLVE SCANNER · DROPPING TRACE…','wr');scanClear=Date.now()+10000;setTimeout(()=>log('SCANNERS CLEARED','ok'),1200)};
@@ -358,7 +350,7 @@ $('bQuiet').onclick=()=>{
   quiet=!quiet;
   $('bQuiet').textContent=quiet?'RESUME SHIELD':'GO QUIET';
   log(quiet?'GOING QUIET · EMISSIONS SUPPRESSED':'SHIELD RESUMED',quiet?'ok':'wr');
-  if(!quiet){phase='stable';nextThreat=0;wasMoving=false;$('tinfo').textContent=''}
+  if(!quiet){phase='stable';nextSwitch=performance.now()+rnd(3000,5000);$('tinfo').textContent=''}
 };
 
 /* ---------- main loop ---------- */
@@ -377,8 +369,6 @@ function loop(ts){
   let vt;
   if(quiet)vt=0.01;
   else if(phase==='scrambling')vt=Math.max(motionI,0.75);
-  else if(phase==='threat')vt=0.55+Math.sin(ts/150)*0.1;
-  else if(phase==='resolving')vt=0.35;
   else vt=0.05;
   intensity+=(vt-intensity)*Math.min(1,dt/700);
   $('mv').textContent='MOTION '+motionI.toFixed(2);
